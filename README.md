@@ -1,66 +1,69 @@
-## Foundry
+# 📜 Autonome Smart Contracts
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This repository contains the core foundational smart contracts for the **Autonome Decentralized AI Protocol**, built and deployed on the BOT Chain ecosystem.
 
-Foundry consists of:
+The contracts are built using [Foundry](https://getfoundry.sh/) and are specifically designed to handle verifiable execution escrows and network operator rewards.
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+---
 
-## Documentation
+## 🏗️ Contracts Architecture
 
-https://book.getfoundry.sh/
+### 1. `AutonomeToken.sol` (ATMA)
+The native utility and governance ERC-20 token for the Autonome network.
+- **Name:** Autonome Token
+- **Symbol:** ATMA
+- **Usage:** Used exclusively to fund the compute escrows for executing AI workloads. Sub-Agents pre-fund tasks with ATMA, and Compute Nodes claim ATMA as a reward for successful execution.
 
-## Usage
+### 2. `AutonomeSettlementEscrow.sol`
+The verifiable execution ledger and escrow contract.
+- **Deposit Task:** Sub-Agents call `depositTask` to securely lock ATMA tokens with a specific task hash and domain identifier.
+- **Submit Proof:** Compute Workers call `submitProof` to provide cryptographic evidence of execution (a `Keccak256` hash of the task prompt, inference output, and the node's private signature).
+- **Settlement:** If the execution is verified and the node is whitelisted, the ATMA escrow is immediately released directly into the Node Operator's Smart Account Vault.
 
-### Build
+### 3. ERC-4337 Smart Accounts (Account Abstraction)
+While the core logic of `EntryPoint` and `SimpleAccountFactory` are natively deployed to the BOT Chain Bohr Testnet, these contracts are designed to seamlessly interoperate with ERC-4337 vaults to isolate and secure Node Operator earnings.
 
-```shell
-$ forge build
+---
+
+## 🚀 Development & Deployment
+
+### Prerequisites
+- [Foundry](https://book.getfoundry.sh/getting-started/installation)
+- A Web3 Wallet funded with Bohr Testnet `tBOT` (Chain ID 968)
+
+### Installation
+```bash
+# Install dependencies
+forge install
 ```
 
-### Test
+### Build & Test
+```bash
+# Compile contracts
+forge build
 
-```shell
-$ forge test
+# Run unit tests
+forge test
 ```
 
-### Format
+### Deployment to Bohr Testnet
+To deploy updates to the `AutonomeToken` or `AutonomeSettlementEscrow`:
 
-```shell
-$ forge fmt
+1. Configure your `.env` with a `PRIVATE_KEY`.
+2. Run the deployment scripts targeting the Bohr Testnet:
+
+```bash
+forge script script/AutonomeToken.s.sol:AutonomeTokenScript \
+  --rpc-url https://rpc.bohr.life \
+  --broadcast \
+  --legacy
 ```
 
-### Gas Snapshots
+---
 
-```shell
-$ forge snapshot
-```
+## 🌐 Network Details (Bohr Testnet)
+- **Chain ID:** 968
+- **RPC URL:** `https://rpc.bohr.life`
+- **Block Explorer:** `https://scan.bohr.life`
 
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+*Built for the BOT Chain Ecosystem.*

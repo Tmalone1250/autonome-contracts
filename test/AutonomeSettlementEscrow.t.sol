@@ -4,9 +4,11 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import "../src/AutonomeToken.sol";
 import "../src/AutonomeSettlementEscrow.sol";
+import "../src/AutonomeNodeRegistry.sol";
 
 contract AutonomeSettlementEscrowTest is Test {
     AutonomeToken public atma;
+    AutonomeNodeRegistry public registry;
     AutonomeSettlementEscrow public escrow;
 
     address public owner = address(this);
@@ -24,8 +26,11 @@ contract AutonomeSettlementEscrowTest is Test {
         // Deploy Token
         atma = new AutonomeToken(owner);
 
+        // Deploy Registry
+        registry = new AutonomeNodeRegistry();
+
         // Deploy Escrow
-        escrow = new AutonomeSettlementEscrow(address(atma), polTreasury, validator);
+        escrow = new AutonomeSettlementEscrow(address(atma), address(registry), polTreasury, validator);
 
         // Fund Alice with 10,000 ATMA
         atma.transfer(alice, 10_000 * 1e18);
@@ -45,15 +50,37 @@ contract AutonomeSettlementEscrowTest is Test {
 
         uint256 initialTotalSupply = atma.totalSupply();
 
+        address[] memory nodes = new address[](3);
+        nodes[0] = address(0xBB2);
+        nodes[1] = address(0xBB3);
+        nodes[2] = address(0xBB4);
+
+        address[] memory vaults = new address[](3);
+        vaults[0] = address(0xCC2);
+        vaults[1] = address(0xCC3);
+        vaults[2] = address(0xCC4);
+
+        // Register nodes
+        vm.prank(vaults[0]);
+        registry.registerNode(nodes[0], vaults[0]);
+        
+        vm.prank(vaults[1]);
+        registry.registerNode(nodes[1], vaults[1]);
+
+        vm.prank(vaults[2]);
+        registry.registerNode(nodes[2], vaults[2]);
+
         // Validator settles the task
         vm.prank(validator);
-        escrow.settleTask(taskId, subAgent, computeNode);
+        escrow.settleTask(taskId, subAgent, nodes);
 
         // Verify 70% Sub-agent payout (700 ATMA)
         assertEq(atma.balanceOf(subAgent), 700 * 1e18);
 
-        // Verify 15% Compute Node payout (150 ATMA)
-        assertEq(atma.balanceOf(computeNode), 150 * 1e18);
+        // Verify 15% Compute Node payout goes to Vaults (150 ATMA total -> 50 ATMA each)
+        assertEq(atma.balanceOf(vaults[0]), 50 * 1e18);
+        assertEq(atma.balanceOf(vaults[1]), 50 * 1e18);
+        assertEq(atma.balanceOf(vaults[2]), 50 * 1e18);
 
         // Verify 10% POL treasury allocation (100 ATMA)
         assertEq(atma.balanceOf(polTreasury), 100 * 1e18);

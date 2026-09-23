@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "../src/AutonomeSettlementEscrow.sol";
+import "../src/AutonomeNodeRegistry.sol";
 
 contract DeployEscrowScript is Script {
     function run() external {
@@ -24,8 +25,11 @@ contract DeployEscrowScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
+        AutonomeNodeRegistry registry = new AutonomeNodeRegistry();
+
         AutonomeSettlementEscrow escrow = new AutonomeSettlementEscrow(
             atmaAddress,
+            address(registry),
             polTreasury,
             validator
         );
@@ -33,8 +37,11 @@ contract DeployEscrowScript is Script {
         vm.stopBroadcast();
 
         console.log("==========================================");
+        console.log("AutonomeNodeRegistry Deployed Successfully!");
+        console.log("Registry Address :", address(registry));
+        console.log("==========================================");
         console.log("AutonomeSettlementEscrow Deployed Successfully!");
-        console.log("Contract Address :", address(escrow));
+        console.log("Escrow Address   :", address(escrow));
         console.log("==========================================");
     }
 }

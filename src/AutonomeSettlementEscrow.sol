@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./AutonomeToken.sol";
+import "./AutonomeNodeRegistry.sol";
 
 /**
  * @title AutonomeSettlementEscrow
@@ -13,6 +14,7 @@ import "./AutonomeToken.sol";
  */
 contract AutonomeSettlementEscrow is Ownable, ReentrancyGuard {
     AutonomeToken public immutable atmaToken;
+    AutonomeNodeRegistry public registry;
 
     // Protocol addresses
     address public polTreasury; // Receives the 10% POL allocation for BDEX V3
@@ -37,10 +39,10 @@ contract AutonomeSettlementEscrow is Ownable, ReentrancyGuard {
     event TaskEscrowed(bytes32 indexed taskId, address indexed user, uint256 amount);
     event TaskSettled(
         bytes32 indexed taskId,
-        address indexed subAgent,
-        address indexed computeNode,
+        address indexed subAgentVault,
+        address[] computeNodes,
         uint256 subAgentReward,
-        uint256 nodeReward,
+        uint256 totalNodeRewardPaid,
         uint256 polAllocation,
         uint256 burnedAmount
     );
@@ -55,14 +57,17 @@ contract AutonomeSettlementEscrow is Ownable, ReentrancyGuard {
 
     constructor(
         address _atmaToken,
+        address _registry,
         address _polTreasury,
         address _validator
     ) Ownable(msg.sender) {
         require(_atmaToken != address(0), "Escrow: zero token");
+        require(_registry != address(0), "Escrow: zero registry");
         require(_polTreasury != address(0), "Escrow: zero pol treasury");
         require(_validator != address(0), "Escrow: zero validator");
 
         atmaToken = AutonomeToken(payable(_atmaToken));
+        registry = AutonomeNodeRegistry(_registry);
         polTreasury = _polTreasury;
         validator = _validator;
     }
@@ -109,31 +114,47 @@ contract AutonomeSettlementEscrow is Ownable, ReentrancyGuard {
     /**
      * @notice Settles a completed intent task, enforcing the 70/15/10/5 distribution.
      * @param taskId Unique identifier for the user intent.
-     * @param subAgent Address of the community sub-agent developer/worker.
-     * @param computeNode Address of the DePIN node runner hosting the inference.
+     * @param subAgentVault Address of the community sub-agent developer/worker vault.
+     * @param computeNodes Array of DePIN node runner verification addresses.
      */
     function settleTask(
         bytes32 taskId,
-        address subAgent,
-        address computeNode
+        address subAgentVault,
+        address[] calldata computeNodes
     ) external onlyValidator nonReentrant {
         IntentTask storage task = tasks[taskId];
         require(task.status == TaskStatus.Escrowed, "Escrow: task not escrowed");
-        require(subAgent != address(0), "Escrow: zero subAgent");
-        require(computeNode != address(0), "Escrow: zero computeNode");
+        require(subAgentVault != address(0), "Escrow: zero subAgentVault");
+        require(computeNodes.length > 0, "Escrow: zero computeNodes");
+        require(computeNodes.length <= 25, "Escrow: batch limit exceeded");
 
         task.status = TaskStatus.Settled;
         uint256 totalAmount = task.amount;
 
         // Calculate splits
         uint256 subAgentReward = (totalAmount * SUB_AGENT_BPS) / 10000;
-        uint256 nodeReward = (totalAmount * COMPUTE_NODE_BPS) / 10000;
+        uint256 totalNodeReward = (totalAmount * COMPUTE_NODE_BPS) / 10000;
         uint256 polAllocation = (totalAmount * POL_BPS) / 10000;
-        uint256 burnedAmount = totalAmount - (subAgentReward + nodeReward + polAllocation); // Remainder (~5%)
+        
+        uint256 nodeRewardPerNode = totalNodeReward / computeNodes.length;
+        
+        uint256 nodesPaid = 0;
 
         // Disburse tokens
-        require(atmaToken.transfer(subAgent, subAgentReward), "Escrow: sub-agent transfer failed");
-        require(atmaToken.transfer(computeNode, nodeReward), "Escrow: node transfer failed");
+        require(atmaToken.transfer(subAgentVault, subAgentReward), "Escrow: sub-agent transfer failed");
+        
+        for (uint256 i = 0; i < computeNodes.length; i++) {
+            address operatorVault = registry.nodeToVault(computeNodes[i]);
+            if (operatorVault != address(0)) {
+                require(atmaToken.transfer(operatorVault, nodeRewardPerNode), "Escrow: node transfer failed");
+                nodesPaid++;
+            }
+        }
+        
+        uint256 totalNodeRewardPaid = nodeRewardPerNode * nodesPaid;
+        // Unregistered nodes' shares get routed into the deflationary burn
+        uint256 burnedAmount = totalAmount - (subAgentReward + totalNodeRewardPaid + polAllocation);
+
         require(atmaToken.transfer(polTreasury, polAllocation), "Escrow: POL transfer failed");
         
         // Native deflationary burn
@@ -141,10 +162,10 @@ contract AutonomeSettlementEscrow is Ownable, ReentrancyGuard {
 
         emit TaskSettled(
             taskId,
-            subAgent,
-            computeNode,
+            subAgentVault,
+            computeNodes,
             subAgentReward,
-            nodeReward,
+            totalNodeRewardPaid,
             polAllocation,
             burnedAmount
         );
@@ -164,6 +185,11 @@ contract AutonomeSettlementEscrow is Ownable, ReentrancyGuard {
     }
 
     // --- Admin Configuration ---
+
+    function setRegistry(address _registry) external onlyOwner {
+        require(_registry != address(0), "Escrow: zero address");
+        registry = AutonomeNodeRegistry(_registry);
+    }
 
     function setPolTreasury(address _polTreasury) external onlyOwner {
         require(_polTreasury != address(0), "Escrow: zero address");
